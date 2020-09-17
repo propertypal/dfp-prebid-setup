@@ -2,7 +2,7 @@
 
 import logging
 
-from googleads import dfp
+from googleads import ad_manager
 
 from dfp.client import get_client
 
@@ -21,7 +21,7 @@ def get_key_id_by_name(name):
 
   dfp_client = get_client()
   custom_targeting_service = dfp_client.GetService('CustomTargetingService',
-    version='v201702')
+    version='v202008')
 
   # Get a key by name.
   query = ('WHERE name = :name')
@@ -32,7 +32,7 @@ def get_key_id_by_name(name):
       'value': name
     }
   }]
-  targeting_key_statement = dfp.FilterStatement(query, values)
+  targeting_key_statement = ad_manager.FilterStatement(query, values)
 
   response = custom_targeting_service.getCustomTargetingKeysByStatement(
       targeting_key_statement.ToStatement())
@@ -57,7 +57,7 @@ def get_targeting_by_key_name(name):
 
   dfp_client = get_client()
   custom_targeting_service = dfp_client.GetService('CustomTargetingService',
-    version='v201702')
+    version='v202008')
 
   # Get a key by name.
   query = ('WHERE name = :name')
@@ -68,23 +68,23 @@ def get_targeting_by_key_name(name):
       'value': name
     }
   }]
-  targeting_key_statement = dfp.FilterStatement(query, values)
+  targeting_key_statement = ad_manager.FilterStatement(query, values)
 
   response = custom_targeting_service.getCustomTargetingKeysByStatement(
       targeting_key_statement.ToStatement())
 
   # If the key exists, get predefined values.
   key_values = None
-  if 'results' in response:
+  if 'results' in response and len(response['results']) > 0:
     key = response['results'][0]
     key_values = []
 
-    query = 'WHERE customTargetingKeyId IN (%s)' % str(key['id'])
-    statement = dfp.FilterStatement(query)
+    query = "WHERE status = 'ACTIVE' AND customTargetingKeyId IN (%s)" % str(key['id'])
+    statement = ad_manager.FilterStatement(query)
 
     response = custom_targeting_service.getCustomTargetingValuesByStatement(
         statement.ToStatement())
-    if 'results' in response:
+    while 'results' in response and len(response['results']) > 0:
       for custom_val in response['results']:
         key_values.append({
           'id': custom_val['id'],
@@ -92,7 +92,9 @@ def get_targeting_by_key_name(name):
           'displayName': custom_val['displayName'],
           'customTargetingKeyId': custom_val['customTargetingKeyId']
         })
-      statement.offset += dfp.SUGGESTED_PAGE_LIMIT
+      statement.offset += ad_manager.SUGGESTED_PAGE_LIMIT
+      response = custom_targeting_service.getCustomTargetingValuesByStatement(
+        statement.ToStatement())
 
   if key_values is None:
     logger.info(u'Key "{key_name}"" does not exist in DFP.'. format(

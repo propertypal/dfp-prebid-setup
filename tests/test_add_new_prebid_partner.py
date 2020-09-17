@@ -15,6 +15,7 @@ email = 'fakeuser@example.com'
 advertiser = 'My Advertiser'
 order = 'My Cool Order'
 placements = ['My Site Leaderboard', 'Another Placement']
+ad_units = ['Leaderboard Ad Unit', 'Another Ad Unit']
 sizes = [
   {
     'width': '300',
@@ -39,11 +40,12 @@ prices = get_prices_array(price_buckets)
   DFP_ADVERTISER_NAME=advertiser,
   DFP_ORDER_NAME=order,
   DFP_TARGETED_PLACEMENT_NAMES=placements,
+  DFP_TARGETED_AD_UNIT_NAMES=ad_units,
   DFP_PLACEMENT_SIZES = sizes,
   PREBID_BIDDER_CODE=bidder_code,
   PREBID_PRICE_BUCKETS=price_buckets,
   DFP_CREATE_ADVERTISER_IF_DOES_NOT_EXIST=False)
-@patch('googleads.dfp.DfpClient.LoadFromStorage')
+@patch('googleads.ad_manager.AdManagerClient.LoadFromStorage')
 class AddNewPrebidPartnerTests(TestCase):
 
   def test_missing_email_setting(self, mock_dfp_client):
@@ -70,11 +72,12 @@ class AddNewPrebidPartnerTests(TestCase):
     with self.assertRaises(MissingSettingException):
       tasks.add_new_prebid_partner.main()
 
-  def test_missing_placement_setting(self, mock_dfp_client):
+  def test_missing_placement_and_ad_units_setting(self, mock_dfp_client):
     """
     It throws an exception with a missing setting.
     """
     settings.DFP_TARGETED_PLACEMENT_NAMES = None
+    settings.DFP_TARGETED_AD_UNIT_NAMES = None
     with self.assertRaises(MissingSettingException):
       tasks.add_new_prebid_partner.main()
 
@@ -96,7 +99,19 @@ class AddNewPrebidPartnerTests(TestCase):
     """
     tasks.add_new_prebid_partner.main()
     args, kwargs = mock_setup_partners.call_args
-    self.assertEqual(args[8], 'EUR')
+    self.assertEqual(args[9], 'EUR')
+
+  @patch('settings.DFP_LINE_ITEM_FORMAT', u'{bidder_code}: HB ${price:0>5}', create=True)
+  @patch('tasks.add_new_prebid_partner.setup_partner')
+  @patch('tasks.add_new_prebid_partner.input', return_value='y')
+  def test_custom_line_item_format(self, mock_input, mock_setup_partners,
+    mock_dfp_client):
+    """
+    Ensure we use the line item format setting if it exists.
+    """
+    tasks.add_new_prebid_partner.main()
+    args, kwargs = mock_setup_partners.call_args
+    self.assertEqual(args[10], u'{bidder_code}: HB ${price:0>5}')
 
   def test_price_bucket_validity_missing_key(self, mock_dfp_client):
     """
@@ -181,22 +196,52 @@ class AddNewPrebidPartnerTests(TestCase):
     """
     tasks.add_new_prebid_partner.main()
     args, kwargs = mock_setup_partners.call_args
-    num_creatives = args[7]
+    num_creatives = args[8]
     self.assertEqual(num_creatives, 5)
 
   @patch('settings.DFP_NUM_CREATIVES_PER_LINE_ITEM', None, create=True)
   @patch('tasks.add_new_prebid_partner.setup_partner')
   @patch('tasks.add_new_prebid_partner.input', return_value='y')
-  def test_num_duplicate_creatives_no_settings(self, mock_input, 
+  def test_num_duplicate_creatives_no_settings_from_placements_and_ad_units(self, mock_input,
     mock_setup_partners, mock_dfp_client):
     """
-    Make sure we use the default number of creatives per line item if the
-    setting does not exist.
+    Make sure we consider placement and ad units as default number of creatives
+    per line item if the setting does not exist.
     """
     tasks.add_new_prebid_partner.main()
     args, kwargs = mock_setup_partners.call_args
-    num_creatives = args[7]
+    num_creatives = args[8]
+    self.assertEqual(num_creatives, len(placements) + len(ad_units))
+
+  @patch('settings.DFP_NUM_CREATIVES_PER_LINE_ITEM', None, create=True)
+  @patch('tasks.add_new_prebid_partner.setup_partner')
+  @patch('tasks.add_new_prebid_partner.input', return_value='y')
+  def test_num_duplicate_creatives_no_settings_from_placements(self, mock_input,
+                                               mock_setup_partners, mock_dfp_client):
+    """
+    Make sure we use placements as the default number of creatives per line item
+    if the setting does not exist.
+    """
+    settings.DFP_TARGETED_AD_UNIT_NAMES = []
+    tasks.add_new_prebid_partner.main()
+    args, kwargs = mock_setup_partners.call_args
+    num_creatives = args[8]
     self.assertEqual(num_creatives, len(placements))
+
+  @patch('settings.DFP_NUM_CREATIVES_PER_LINE_ITEM', None, create=True)
+  @patch('tasks.add_new_prebid_partner.setup_partner')
+  @patch('tasks.add_new_prebid_partner.input', return_value='y')
+  def test_num_duplicate_creatives_no_settings_from_ad_units(self, mock_input,
+                                               mock_setup_partners, mock_dfp_client):
+    """
+    Make sure we use ad units as the default number of creatives per line item
+    if the setting does not exist.
+    """
+    settings.DFP_TARGETED_PLACEMENT_NAMES = []
+    tasks.add_new_prebid_partner.main()
+    args, kwargs = mock_setup_partners.call_args
+    num_creatives = args[8]
+    self.assertEqual(num_creatives, len(ad_units))
 
   @patch('tasks.add_new_prebid_partner.create_line_item_configs')
   @patch('tasks.add_new_prebid_partner.DFPValueIdGetter')
@@ -224,17 +269,10 @@ class AddNewPrebidPartnerTests(TestCase):
       return_value=246810)
     mock_create_orders.create_order = MagicMock(return_value=1357913)
 
-    tasks.add_new_prebid_partner.setup_partner(
-      user_email=email,
-      advertiser_name=advertiser,
-      order_name=order,
-      placements=placements,
-      bidder_code=bidder_code,
-      sizes=sizes,
-      prices=prices,
-      num_creatives=2,
-      currency_code='USD',
-    )
+    tasks.add_new_prebid_partner.setup_partner(user_email=email, advertiser_name=advertiser, order_name=order,
+                                               placements=placements, ad_units=[], sizes=sizes,
+                                               bidder_code=bidder_code, prices=prices, num_creatives=2,
+                                               currency_code='USD', line_item_format=u'{bidder_code}: HB ${price:0>5}')
 
     mock_get_users.get_user_id_by_email.assert_called_once_with(email)
     mock_get_placements.get_placement_ids_by_name.assert_called_once_with(
@@ -244,7 +282,7 @@ class AddNewPrebidPartnerTests(TestCase):
     mock_create_orders.create_order.assert_called_once_with(order, 246810,
       14523)
     (mock_create_creatives.create_duplicate_creative_configs
-      .assert_called_once_with(bidder_code, order, 246810, 2))
+      .assert_called_once_with(bidder_code, order, 246810, 2, False, ''))
     mock_create_creatives.create_creatives.assert_called_once()
     mock_create_line_items.create_line_items.assert_called_once()
     mock_licas.make_licas.assert_called_once()
@@ -254,38 +292,49 @@ class AddNewPrebidPartnerTests(TestCase):
     It creates the expected line item configs.
     """
 
-    configs = tasks.add_new_prebid_partner.create_line_item_configs(
-      prices=[100000, 200000, 300000],
-      order_id=1234567,
-      placement_ids=[9876543, 1234567],
-      bidder_code='iamabiddr',
-      sizes=[{
-        'width': '728',
-        'height': '90'
-      }],
-      hb_bidder_key_id=999999,
-      hb_pb_key_id=888888,
-      currency_code='HUF',
-      HBBidderValueGetter=MagicMock(return_value=3434343434),
-      HBPBValueGetter=MagicMock(return_value=5656565656),
-    )
+    configs = tasks.add_new_prebid_partner.create_line_item_configs(prices=[100000, 200000, 300000], order_id=1234567,
+                                                                    placement_ids=[9876543, 1234567], ad_unit_ids=None,
+                                                                    bidder_code='iamabiddr', sizes=[{
+            'width': '728',
+            'height': '90'
+        }], hb_bidder_key_id=999999, hb_pb_key_id=888888, currency_code='HUF',
+        line_item_format=u'{bidder_code}: HB ${price:0>5}', HBBidderValueGetter=MagicMock(
+            return_value=3434343434), HBPBValueGetter=MagicMock(return_value=5656565656), video_ad_type=False)
 
     self.assertEqual(len(configs), 3)
 
-    self.assertEqual(configs[0]['name'], 'iamabiddr: HB $0.10')
+    self.assertEqual(configs[0]['name'], 'iamabiddr: HB $00.10')
     self.assertEqual(
       configs[0]['targeting']['inventoryTargeting']['targetedPlacementIds'],
       [9876543, 1234567]
     )
     self.assertEqual(configs[0]['costPerUnit']['microAmount'], 100000)
 
-    self.assertEqual(configs[2]['name'], 'iamabiddr: HB $0.30')
+    self.assertEqual(configs[2]['name'], 'iamabiddr: HB $00.30')
     self.assertEqual(
       configs[2]['targeting']['inventoryTargeting']['targetedPlacementIds'],
       [9876543, 1234567]
     )
     self.assertEqual(configs[2]['costPerUnit']['microAmount'], 300000)
     self.assertEqual(configs[2]['costPerUnit']['currencyCode'], 'HUF')
+
+  def test_create_line_item_configs_video(self, mock_dfp_client):
+    """
+    It creates the expected line item configs.
+    """
+
+    configs = tasks.add_new_prebid_partner.create_line_item_configs(prices=[1], order_id=2,
+                                                                    placement_ids=[3], ad_unit_ids=None,
+                                                                    bidder_code='iamabiddr', sizes=[{
+            'width': '640',
+            'height': '480'
+        }], hb_bidder_key_id=4, hb_pb_key_id=5, currency_code='HUF',
+        line_item_format=u'{bidder_code}: HB ${price:0>5}', HBBidderValueGetter=MagicMock(
+            return_value=6), HBPBValueGetter=MagicMock(return_value=7), video_ad_type=True)
+
+    self.assertEqual(len(configs), 1)
+    self.assertEqual(configs[0]['environmentType'], 'VIDEO_PLAYER')
+    self.assertEqual(configs[0]['targeting']['requestPlatformTargeting'], ({ 'targetedRequestPlatforms': [ 'VIDEO_PLAYER' ]},))
 
   @patch('dfp.create_custom_targeting')
   @patch('dfp.get_custom_targeting')

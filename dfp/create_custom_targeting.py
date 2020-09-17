@@ -2,7 +2,7 @@
 
 import logging
 
-from googleads import dfp
+from googleads import ad_manager
 
 from dfp.client import get_client
 
@@ -23,7 +23,7 @@ def create_targeting_key(name, display_name=None, key_type='FREEFORM'):
 
   dfp_client = get_client()
   custom_targeting_service = dfp_client.GetService('CustomTargetingService',
-    version='v201702')
+    version='v202008')
 
   if display_name is None:
     display_name = name
@@ -41,9 +41,9 @@ def create_targeting_key(name, display_name=None, key_type='FREEFORM'):
   keys = custom_targeting_service.createCustomTargetingKeys(keys)
   key = keys[0]
 
-  logger.info(u'Created a custom targeting key with id "{id}", name "{name}", '
-    'and display name "{display_name}".'.format(id=key['id'],
-      name=key['name'], display_name=key['displayName']))
+  logger.info(u'Created a custom targeting key with name "{name}" '
+    'and display name "{display_name}".'.format(name=key['name'],
+      display_name=key['displayName']))
 
   return key['id']
 
@@ -60,7 +60,7 @@ def create_targeting_value(name, key_id):
 
   dfp_client = get_client()
   custom_targeting_service = dfp_client.GetService('CustomTargetingService',
-    version='v201702')
+    version='v202008')
 
   values_config = [
     {
@@ -80,8 +80,8 @@ def create_targeting_value(name, key_id):
   if values:
     created_value = values[0]
 
-  logger.info(u'Created a custom targeting value with id "{id}", name "{name}", '
-    'and display name "{display_name}".'.format(id=created_value['id'],
-      name=created_value['name'], display_name=created_value['displayName']))
+  logger.info(u'Created a custom targeting value with name "{name}" '
+    'and display name "{display_name}".'.format(name=created_value['name'],
+      display_name=created_value['displayName']))
 
   return created_value['id']

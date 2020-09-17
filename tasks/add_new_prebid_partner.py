@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import os
 import sys
 from builtins import input
 from pprint import pprint
@@ -14,6 +15,7 @@ import dfp.create_custom_targeting
 import dfp.create_creatives
 import dfp.create_line_items
 import dfp.create_orders
+import dfp.get_ad_units
 import dfp.get_advertisers
 import dfp.get_custom_targeting
 import dfp.get_placements
@@ -34,16 +36,21 @@ from tasks.price_utils import (
 init()
 
 # Configure logging.
-FORMAT = '%(message)s'
-logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
-logging.getLogger('googleads').setLevel(logging.ERROR)
-logging.getLogger('oauth2client').setLevel(logging.ERROR)
+if 'DISABLE_LOGGING' in os.environ and os.environ['DISABLE_LOGGING'] == 'true':
+  logging.disable(logging.CRITICAL)
+  logging.getLogger('googleads').setLevel(logging.CRITICAL)
+  logging.getLogger('oauth2client').setLevel(logging.CRITICAL)
+else:
+  FORMAT = '%(message)s'
+  logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
+  logging.getLogger('googleads').setLevel(logging.ERROR)
+  logging.getLogger('oauth2client').setLevel(logging.ERROR)
 
 logger = logging.getLogger(__name__)
 
 
-def setup_partner(user_email, advertiser_name, order_name, placements,
-    sizes, bidder_code, prices, num_creatives, currency_code):
+def setup_partner(user_email, advertiser_name, order_name, placements, ad_units, sizes, bidder_code, prices,
+                  num_creatives, currency_code, line_item_format, video_ad_type=False, redirect_url=''):
   """
   Call all necessary DFP tasks for a new Prebid partner setup.
   """
@@ -54,6 +61,9 @@ def setup_partner(user_email, advertiser_name, order_name, placements,
   # Get the placement IDs.
   placement_ids = dfp.get_placements.get_placement_ids_by_name(placements)
 
+  # Get the ad unit IDs.
+  ad_unit_ids = dfp.get_ad_units.get_ad_unit_ids_by_name(ad_units)
+
   # Get (or potentially create) the advertiser.
   advertiser_id = dfp.get_advertisers.get_advertiser_id_by_name(
     advertiser_name)
@@ -63,7 +73,7 @@ def setup_partner(user_email, advertiser_name, order_name, placements,
 
   # Create creatives.
   creative_configs = dfp.create_creatives.create_duplicate_creative_configs(
-      bidder_code, order_name, advertiser_id, num_creatives)
+      bidder_code, order_name, advertiser_id, num_creatives, video_ad_type, redirect_url)
   creative_ids = dfp.create_creatives.create_creatives(creative_configs)
 
   # Get DFP key IDs for line item targeting.
@@ -75,9 +85,9 @@ def setup_partner(user_email, advertiser_name, order_name, placements,
   HBPBValueGetter = DFPValueIdGetter('hb_pb')
 
   # Create line items.
-  line_items_config = create_line_item_configs(prices, order_id,
-    placement_ids, bidder_code, sizes, hb_bidder_key_id, hb_pb_key_id,
-    currency_code, HBBidderValueGetter, HBPBValueGetter)
+  line_items_config = create_line_item_configs(prices, order_id, placement_ids, ad_unit_ids, bidder_code, sizes,
+                                               hb_bidder_key_id, hb_pb_key_id, currency_code, line_item_format,
+                                               HBBidderValueGetter, HBPBValueGetter, video_ad_type)
   logger.info("Creating line items...")
   line_item_ids = dfp.create_line_items.create_line_items(line_items_config)
 
@@ -142,7 +152,7 @@ def get_or_create_dfp_targeting_key(name):
   Get or create a custom targeting key by name.
 
   Args:
-    name (str)  
+    name (str)
   Returns:
     an integer: the ID of the targeting key
   """
@@ -151,9 +161,9 @@ def get_or_create_dfp_targeting_key(name):
     key_id = dfp.create_custom_targeting.create_targeting_key(name)
   return key_id
 
-def create_line_item_configs(prices, order_id, placement_ids, bidder_code,
-  sizes, hb_bidder_key_id, hb_pb_key_id, currency_code, HBBidderValueGetter,
-  HBPBValueGetter):
+def create_line_item_configs(prices, order_id, placement_ids, ad_unit_ids, bidder_code, sizes, hb_bidder_key_id,
+                             hb_pb_key_id, currency_code, line_item_format, HBBidderValueGetter, HBPBValueGetter,
+                             video_ad_type):
   """
   Create a line item config for each price bucket.
 
@@ -161,12 +171,15 @@ def create_line_item_configs(prices, order_id, placement_ids, bidder_code,
     prices (array)
     order_id (int)
     placement_ids (arr)
+    ad_unit_ids (arr)
     bidder_code (str)
     hb_bidder_key_id (int)
     hb_pb_key_id (int)
     currency_code (str)
+    line_item_format (str)
     HBBidderValueGetter (DFPValueIdGetter)
     HBPBValueGetter (DFPValueIdGetter)
+    video_ad_type (bool)
   Returns:
     an array of objects: the array of DFP line item configurations
   """
@@ -180,7 +193,7 @@ def create_line_item_configs(prices, order_id, placement_ids, bidder_code,
     price_str = num_to_str(micro_amount_to_num(price))
 
     # Autogenerate the line item name.
-    line_item_name = u'{bidder_code}: HB {price}'.format(
+    line_item_name = line_item_format.format(
       bidder_code=bidder_code,
       price=price_str
     )
@@ -188,18 +201,13 @@ def create_line_item_configs(prices, order_id, placement_ids, bidder_code,
     # The DFP targeting value ID for this `hb_pb` price value.
     hb_pb_value_id = HBPBValueGetter.get_value_id(price_str)
 
-    config = dfp.create_line_items.create_line_item_config(
-      name=line_item_name,
-      order_id=order_id,
-      placement_ids=placement_ids,
-      cpm_micro_amount=price,
-      sizes=sizes,
-      hb_bidder_key_id=hb_bidder_key_id,
-      hb_pb_key_id=hb_pb_key_id,
-      hb_bidder_value_id=hb_bidder_value_id,
-      hb_pb_value_id=hb_pb_value_id,
-      currency_code=currency_code,
-    )
+    config = dfp.create_line_items.create_line_item_config(name=line_item_name, order_id=order_id,
+                                                           placement_ids=placement_ids, ad_unit_ids=ad_unit_ids,
+                                                           cpm_micro_amount=price, sizes=sizes,
+                                                           hb_bidder_key_id=hb_bidder_key_id, hb_pb_key_id=hb_pb_key_id,
+                                                           hb_bidder_value_id=hb_bidder_value_id,
+                                                           hb_pb_value_id=hb_pb_value_id, currency_code=currency_code,
+                                                           video_ad_type=video_ad_type)
 
     line_items_config.append(config)
 
@@ -262,7 +270,7 @@ def main():
   user_email = getattr(settings, 'DFP_USER_EMAIL_ADDRESS', None)
   if user_email is None:
     raise MissingSettingException('DFP_USER_EMAIL_ADDRESS')
-   
+
   advertiser_name = getattr(settings, 'DFP_ADVERTISER_NAME', None)
   if advertiser_name is None:
     raise MissingSettingException('DFP_ADVERTISER_NAME')
@@ -272,11 +280,19 @@ def main():
     raise MissingSettingException('DFP_ORDER_NAME')
 
   placements = getattr(settings, 'DFP_TARGETED_PLACEMENT_NAMES', None)
-  if placements is None:
-    raise MissingSettingException('DFP_TARGETED_PLACEMENT_NAMES')
-  elif len(placements) < 1:
-    raise BadSettingException('The setting "DFP_TARGETED_PLACEMENT_NAMES" '
-      'must contain at least one DFP placement ID.')
+  ad_units = getattr(settings, 'DFP_TARGETED_AD_UNIT_NAMES', None)
+
+  video_ad_type = getattr(settings, 'DFP_VIDEO_AD_TYPE', False)
+  vast_redirect_url = getattr(settings, 'DFP_VAST_REDIRECT_URL', '')
+
+  if video_ad_type is True and len(vast_redirect_url) < 1:
+    raise BadSettingException('When setting "DFP_VIDEO_AD_TYPE" to "True", please also set "DFP_VAST_REDIRECT_URL".')
+
+  if ad_units is None and placements is None:
+    raise MissingSettingException('DFP_TARGETED_PLACEMENT_NAMES or DFP_TARGETED_AD_UNIT_NAMES')
+  elif (placements is None or len(placements) < 1) and (ad_units is None or len(ad_units) < 1):
+    raise BadSettingException('The setting "DFP_TARGETED_PLACEMENT_NAMES" or "DFP_TARGETED_AD_UNIT_NAMES" '
+      'must contain at least one DFP placement or ad unit.')
 
   sizes = getattr(settings, 'DFP_PLACEMENT_SIZES', None)
   if sizes is None:
@@ -287,12 +303,14 @@ def main():
 
   currency_code = getattr(settings, 'DFP_CURRENCY_CODE', 'USD')
 
+  line_item_format = getattr(settings, 'DFP_LINE_ITEM_FORMAT', u'{bidder_code}: HB ${price}')
+
   # How many creatives to attach to each line item. We need at least one
   # creative per ad unit on a page. See:
   # https://github.com/kmjennison/dfp-prebid-setup/issues/13
   num_creatives = (
     getattr(settings, 'DFP_NUM_CREATIVES_PER_LINE_ITEM', None) or
-    len(placements)
+    len(placements) + len(ad_units)
   )
 
   bidder_code = getattr(settings, 'PREBID_BIDDER_CODE', None)
@@ -314,13 +332,12 @@ def main():
     Going to create {name_start_format}{num_line_items}{format_end} new line items.
       {name_start_format}Order{format_end}: {value_start_format}{order_name}{format_end}
       {name_start_format}Advertiser{format_end}: {value_start_format}{advertiser}{format_end}
-      {name_start_format}Owner{format_end}: {value_start_format}{user_email}{format_end}
 
     Line items will have targeting:
       {name_start_format}hb_pb{format_end} = {value_start_format}{prices_summary}{format_end}
       {name_start_format}hb_bidder{format_end} = {value_start_format}{bidder_code}{format_end}
       {name_start_format}placements{format_end} = {value_start_format}{placements}{format_end}
-
+      {name_start_format}ad units{format_end} = {value_start_format}{ad_units}{format_end}
     """.format(
       num_line_items = len(prices),
       order_name=order_name,
@@ -329,11 +346,28 @@ def main():
       prices_summary=prices_summary,
       bidder_code=bidder_code,
       placements=placements,
+      ad_units=ad_units,
       sizes=sizes,
       name_start_format=color.BOLD,
       format_end=color.END,
       value_start_format=color.BLUE,
     ))
+
+  if video_ad_type:
+    logger.info(
+    u"""    Line items will have VAST redirect creatives with redirect URL:
+      {value_start_format}{redirect_url}{format_end}
+
+    """.format(
+      redirect_url=vast_redirect_url,
+      value_start_format=color.BLUE,
+      format_end=color.END,
+    ))
+  else:
+    logger.info(
+    u"""    Line items will have third party creatives based on snippet.html content.
+
+    """)
 
   ok = input('Is this correct? (y/n)\n')
 
@@ -341,17 +375,7 @@ def main():
     logger.info('Exiting.')
     return
 
-  setup_partner(
-    user_email,
-    advertiser_name,
-    order_name,
-    placements,
-    sizes,
-    bidder_code,
-    prices,
-    num_creatives,
-    currency_code,
-  )
+  setup_partner(user_email, advertiser_name, order_name, placements, ad_units, sizes, bidder_code, prices, num_creatives, currency_code, line_item_format, video_ad_type, vast_redirect_url)
 
 if __name__ == '__main__':
   main()

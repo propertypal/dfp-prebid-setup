@@ -3,7 +3,7 @@
 
 import logging
 
-from googleads import dfp
+from googleads import ad_manager
 
 from dfp.client import get_client
 
@@ -22,7 +22,7 @@ def get_order_by_name(order_name):
   """
 
   dfp_client = get_client()
-  order_service = dfp_client.GetService('OrderService', version='v201702')
+  order_service = dfp_client.GetService('OrderService', version='v202008')
 
   # Filter by name.
   query = 'WHERE name = :name'
@@ -33,7 +33,7 @@ def get_order_by_name(order_name):
       'value': order_name
     }
   }]
-  statement = dfp.FilterStatement(query, values)
+  statement = ad_manager.FilterStatement(query, values)
   response = order_service.getOrdersByStatement(statement.ToStatement())
 
   no_order_found = False
@@ -46,8 +46,7 @@ def get_order_by_name(order_name):
     return None
   else:
     order = response['results'][0]
-    logger.info(u'Found an order with ID "{id}" and name "{name}".'.format(
-      id=order['id'], name=order['name']))
+    logger.info(u'Found an order with name "{name}".'.format(name=order['name']))
     return order
 
 def get_all_orders(print_orders=False):
@@ -61,23 +60,24 @@ def get_all_orders(print_orders=False):
   dfp_client = get_client()
 
   # Initialize appropriate service.
-  order_service = dfp_client.GetService('OrderService', version='v201702')
+  order_service = dfp_client.GetService('OrderService', version='v202008')
 
   # Create a statement to select orders.
-  statement = dfp.FilterStatement()
+  statement = ad_manager.FilterStatement()
+  print('Getting all orders...')
 
   # Retrieve a small amount of orders at a time, paging
   # through until all orders have been retrieved.
   while True:
     response = order_service.getOrdersByStatement(statement.ToStatement())
-    if 'results' in response:
+    if 'results' in response and len(response['results']) > 0:
       for order in response['results']:
-        msg = u'Found an order with ID "{id}" and name "{name}".'.format(
-          id=order['id'], name=order['name'])
+        msg = u'Found an order with name "{name}".'.format(name=order['name'])
         if print_orders:
           print(msg)
-      statement.offset += dfp.SUGGESTED_PAGE_LIMIT
+      statement.offset += ad_manager.SUGGESTED_PAGE_LIMIT
     else:
+      print('No additional orders found.')
       break
 
 def main():

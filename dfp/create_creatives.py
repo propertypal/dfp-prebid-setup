@@ -3,7 +3,7 @@ import logging
 import os
 import pprint
 
-from googleads import dfp
+from googleads import ad_manager
 
 from dfp.client import get_client
 
@@ -21,24 +21,25 @@ def create_creatives(creatives):
   """
   dfp_client = get_client()
   creative_service = dfp_client.GetService('CreativeService',
-    version='v201702')
+    version='v202008')
   creatives = creative_service.createCreatives(creatives)
 
   # Return IDs of created line items.
   created_creative_ids = []
   for creative in creatives:
     created_creative_ids.append(creative['id'])
-    logger.info(u'Created creative with ID "{0}" and name "{1}".'.format(
-      creative['id'], creative['name']))
+    logger.info(u'Created creative with name "{name}".'.format(name=creative['name']))
   return created_creative_ids
 
-def create_creative_config(name, advertiser_id):
+def create_creative_config(name, advertiser_id, video_ad_type, redirect_url):
   """
   Creates a creative config object.
 
   Args:
     name (str): the name of the creative
     advertiser_id (int): the ID of the advertiser in DFP
+    video_ad_type (bool): create video ads
+    redirect_url (str): if not empty, creates a redirect creative with the provided URL instead of a third party
   Returns:
     an object: the line item config
   """
@@ -48,19 +49,22 @@ def create_creative_config(name, advertiser_id):
   with open(snippet_file_path, 'r') as snippet_file:
       snippet = snippet_file.read()
 
-  # https://developers.google.com/doubleclick-publishers/docs/reference/v201702/CreativeService.Creative
+  # https://developers.google.com/doubleclick-publishers/docs/reference/v201802/CreativeService.Creative
   config = {
-    'xsi_type': 'ThirdPartyCreative',
     'name': name,
     'advertiserId': advertiser_id,
-    'size': {
-      'width': '1',
-      'height': '1'
-    },
-    'snippet': snippet,
-    # https://github.com/prebid/Prebid.js/issues/418
-    'isSafeFrameCompatible': False,
   }
+
+  if video_ad_type:
+    config['xsi_type'] = 'VastRedirectCreative'
+    config['duration'] = 1000
+    config['size'] = { 'width': '640', 'height': '480' }
+    config['vastXmlUrl'] = redirect_url
+  else:
+    config['xsi_type'] = 'ThirdPartyCreative'
+    config['snippet'] = snippet
+    config['isSafeFrameCompatible'] = True
+    config['size'] = { 'width': '1', 'height': '1' }
 
   return config
 
@@ -80,7 +84,7 @@ def build_creative_name(bidder_code, order_name, creative_num):
         bidder_code=bidder_code, order_name=order_name, num=creative_num)
 
 def create_duplicate_creative_configs(bidder_code, order_name, advertiser_id,
-  num_creatives=1):
+  num_creatives=1, video_ad_type=False, redirect_url=''):
   """
   Returns an array of creative config object.
 
@@ -89,6 +93,8 @@ def create_duplicate_creative_configs(bidder_code, order_name, advertiser_id,
     order_name (int): the name of the order in DFP
     advertiser_id (int): the ID of the advertiser in DFP
     num_creatives (int): how many creative configs to generate
+    video_ad_type (bool): create video ads
+    redirect_url (str): if not empty, creates a redirect creative with the provided URL instead of a third party
   Returns:
     an array: an array of length `num_creatives`, each item a line item config
   """
@@ -97,6 +103,8 @@ def create_duplicate_creative_configs(bidder_code, order_name, advertiser_id,
     config = create_creative_config(
       name=build_creative_name(bidder_code, order_name, creative_num),
       advertiser_id=advertiser_id,
+      video_ad_type=video_ad_type,
+      redirect_url=redirect_url,
     )
     creative_configs.append(config)
   return creative_configs

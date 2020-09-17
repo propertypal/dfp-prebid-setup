@@ -1,13 +1,13 @@
 
 from unittest import TestCase
-from mock import MagicMock, Mock, patch
+from mock import MagicMock, patch
 
 import settings
 import dfp.create_line_items
 from dfp.exceptions import BadSettingException, MissingSettingException
 
 
-@patch('googleads.dfp.DfpClient.LoadFromStorage')
+@patch('googleads.ad_manager.AdManagerClient.LoadFromStorage')
 class DFPCreateLineItemsTests(TestCase):
 
   def test_create_line_items_call(self, mock_dfp_client):
@@ -18,17 +18,11 @@ class DFPCreateLineItemsTests(TestCase):
     mock_dfp_client.return_value = MagicMock()
 
     line_items_config = [
-      dfp.create_line_items.create_line_item_config(
-        name='My Line Item',
-        order_id=1234567,
-        placement_ids=['one-placement', 'another-placement'],
-        sizes=[],
-        cpm_micro_amount=10000000,
-        hb_bidder_key_id=999999,
-        hb_pb_key_id=888888,
-        hb_bidder_value_id=222222,
-        hb_pb_value_id=111111,
-      )
+      dfp.create_line_items.create_line_item_config(name='My Line Item', order_id=1234567,
+                                                    placement_ids=['one-placement', 'another-placement'],
+                                                    ad_unit_ids=['ad-unit', 'anoher-ad-unit'], cpm_micro_amount=10000000, sizes=[],
+                                                    hb_bidder_key_id=999999, hb_pb_key_id=888888,
+                                                    hb_bidder_value_id=222222, hb_pb_value_id=111111)
     ]
 
     dfp.create_line_items.create_line_items(line_items_config)
@@ -44,25 +38,18 @@ class DFPCreateLineItemsTests(TestCase):
     """
 
     self.assertEqual(
-      dfp.create_line_items.create_line_item_config(
-        name='A Fake Line Item',
-        order_id=1234567,
-        placement_ids=['one-placement', 'another-placement-id'],
-        cpm_micro_amount=24000000,
-        sizes=[{
+      dfp.create_line_items.create_line_item_config(name='A Fake Line Item', order_id=1234567,
+                                                    placement_ids=['one-placement', 'another-placement-id'],
+                                                    ad_unit_ids=['ad-unit', 'anoher-ad-unit'], cpm_micro_amount=24000000, sizes=[{
           'width': '728',
           'height': '90',
-        }],
-        hb_bidder_key_id=999999,
-        hb_pb_key_id=888888,
-        hb_bidder_value_id=222222,
-        hb_pb_value_id=111111,
-      ),
+        }], hb_bidder_key_id=999999, hb_pb_key_id=888888, hb_bidder_value_id=222222, hb_pb_value_id=111111),
       {
         'orderId': 1234567,
         'startDateTimeType': 'IMMEDIATELY',
         'targeting': {
           'inventoryTargeting': {
+            'targetedAdUnits': [{'adUnitId': 'ad-unit'}, {'adUnitId': 'anoher-ad-unit'}],
             'targetedPlacementIds': ['one-placement', 'another-placement-id']
           },
           'customTargeting': {
@@ -96,12 +83,6 @@ class DFPCreateLineItemsTests(TestCase):
         'creativePlaceholders': [
           {
             'size': {
-              'width': '1',
-              'height': '1'
-            },
-          },
-          {
-            'size': {
               'width': '728',
               'height': '90'
             }
@@ -112,26 +93,19 @@ class DFPCreateLineItemsTests(TestCase):
 
     # Change some inputs.
     self.assertEqual(
-      dfp.create_line_items.create_line_item_config(
-        name='Cool Line Item',
-        order_id=22334455,
-        placement_ids=['one-placement', 'another-placement-id'],
-        cpm_micro_amount=40000000,
-        sizes=[{
+      dfp.create_line_items.create_line_item_config(name='Cool Line Item', order_id=22334455,
+                                                    placement_ids=['one-placement', 'another-placement-id'],
+                                                    ad_unit_ids=['ad-unit', 'anoher-ad-unit'], cpm_micro_amount=40000000, sizes=[{
           'width': '728',
           'height': '90',
-        }],
-        hb_bidder_key_id=999999,
-        hb_pb_key_id=888888,
-        hb_bidder_value_id=222222,
-        hb_pb_value_id=111111,
-        currency_code='EUR',
-      ),
+        }], hb_bidder_key_id=999999, hb_pb_key_id=888888, hb_bidder_value_id=222222, hb_pb_value_id=111111,
+                                                    currency_code='EUR'),
       {
         'orderId': 22334455,
         'startDateTimeType': 'IMMEDIATELY',
         'targeting': {
           'inventoryTargeting': {
+            'targetedAdUnits': [{'adUnitId': 'ad-unit'}, {'adUnitId': 'anoher-ad-unit'}],
             'targetedPlacementIds': ['one-placement', 'another-placement-id']
           },
           'customTargeting': {
@@ -165,14 +139,66 @@ class DFPCreateLineItemsTests(TestCase):
         'creativePlaceholders': [
           {
             'size': {
-              'width': '1',
-              'height': '1'
-            },
-          },
-          {
-            'size': {
               'width': '728',
               'height': '90'
+            }
+          },
+        ],
+      }
+    )
+
+    # With video ad type
+    self.assertEqual(
+      dfp.create_line_items.create_line_item_config(name='Video Line Item', order_id=42,
+                                                    placement_ids=['video-placement'],
+                                                    ad_unit_ids=['video-ad-unit'], cpm_micro_amount=40000000, sizes=[{
+          'width': '640',
+          'height': '480',
+        }], hb_bidder_key_id=999999, hb_pb_key_id=888888, hb_bidder_value_id=222222, hb_pb_value_id=111111,
+                                                    currency_code='EUR', video_ad_type=True),
+      {
+        'orderId': 42,
+        'startDateTimeType': 'IMMEDIATELY',
+        'targeting': {
+          'inventoryTargeting': {
+            'targetedAdUnits': [{'adUnitId': 'video-ad-unit'}],
+            'targetedPlacementIds': ['video-placement']
+          },
+          'customTargeting': {
+            'children': [
+              {
+                'keyId': 999999,
+                'operator': 'IS',
+                'valueIds': [222222],
+                'xsi_type': 'CustomCriteria'
+              },
+              {
+                'keyId': 888888,
+                'operator': 'IS',
+                'valueIds': [111111],
+                'xsi_type': 'CustomCriteria'
+              }
+            ],
+            'logicalOperator': 'AND',
+            'xsi_type': 'CustomCriteriaSet'
+          },
+          'requestPlatformTargeting': ({'targetedRequestPlatforms': ['VIDEO_PLAYER']},),
+        },
+        'name': 'Video Line Item',
+        'costType': 'CPM',
+        'costPerUnit': {'currencyCode': 'EUR', 'microAmount': 40000000},
+        'creativeRotationType': 'EVEN',
+        'environmentType': 'VIDEO_PLAYER',
+        'lineItemType': 'PRICE_PRIORITY',
+        'unlimitedEndDateTime': True,
+        'primaryGoal': {
+          'goalType': 'NONE'
+        },
+        'creativePlaceholders': [
+          {
+            'size': {
+              'width': '640',
+              'height': '480'
             }
           },
         ],
@@ -218,11 +244,6 @@ class DFPCreateLineItemsTests(TestCase):
           'contractedUnitsBought': 0,
           'creativePlaceholders': [
             {
-              'size': {
-                'width': 1,
-                'height': 1,
-                'isAspectRatio': False,
-              },
               'expectedCreativeCount': 1,
               'creativeSizeType': 'PIXEL',
             },

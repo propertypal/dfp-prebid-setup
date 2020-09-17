@@ -2,7 +2,7 @@
 
 import logging
 
-from googleads import dfp
+from googleads import ad_manager
 
 import settings
 from dfp.client import get_client
@@ -27,7 +27,7 @@ def get_placement_by_name(placement_name):
 
   dfp_client = get_client()
   placement_service = dfp_client.GetService('PlacementService',
-    version='v201702')
+    version='v202008')
 
   query = 'WHERE name = :name'
   values = [
@@ -37,7 +37,7 @@ def get_placement_by_name(placement_name):
            'value': placement_name
        }},
   ]
-  statement = dfp.FilterStatement(query, values)
+  statement = ad_manager.FilterStatement(query, values)
   response = placement_service.getPlacementsByStatement(
     statement.ToStatement())
 
@@ -52,8 +52,7 @@ def get_placement_by_name(placement_name):
       placement_name))
   else:
     placement = response['results'][0]
-    logger.info(u'Found placement with ID "{id}" and name "{name}".'.format(
-      id=placement['id'], name=placement['name']))
+    logger.info(u'Found placement with name "{name}".'.format(name=placement['name']))
   return placement
 
 def get_placement_ids_by_name(placement_names):

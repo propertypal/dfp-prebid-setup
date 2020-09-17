@@ -2,6 +2,10 @@ node_modules
 .env
 key.p12
 key.pem
+key.json
+key-*.json
 googleads.yaml
+googleads-*.yaml
+secret-files.tar
 *.pyc
 local_settings.py

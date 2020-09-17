@@ -2,7 +2,7 @@
 
 import logging
 
-from googleads import dfp
+from googleads import ad_manager
 
 import settings
 from dfp.client import get_client
@@ -25,7 +25,7 @@ def create_advertiser(name):
     an integer: the advertiser's DFP ID
   """
   dfp_client = get_client()
-  company_service = dfp_client.GetService('CompanyService', version='v201702')
+  company_service = dfp_client.GetService('CompanyService', version='v202008')
 
   advertisers_config = [
     {
@@ -38,9 +38,8 @@ def create_advertiser(name):
 
   # Display results.
   for advertiser in advertisers:
-    logger.info(u'Created an advertiser with ID "{id}", name "{name}", and '
-      'type "{type}".'.format(id=advertiser['id'], name=advertiser['name'],
-        type=advertiser['type']))
+    logger.info(u'Created an advertiser with name "{name}" and '
+      'type "{type}".'.format(name=advertiser['name'], type=advertiser['type']))
 
   return advertiser
 
@@ -54,7 +53,7 @@ def get_advertiser_id_by_name(name):
     an integer: the advertiser's DFP ID
   """
   dfp_client = get_client()
-  company_service = dfp_client.GetService('CompanyService', version='v201702')
+  company_service = dfp_client.GetService('CompanyService', version='v202008')
 
   # Filter by name.
   query = 'WHERE name = :name'
@@ -65,7 +64,7 @@ def get_advertiser_id_by_name(name):
            'value': name
        }},
   ]
-  statement = dfp.FilterStatement(query, values)
+  statement = ad_manager.FilterStatement(query, values)
 
   response = company_service.getCompaniesByStatement(statement.ToStatement())
 
@@ -80,17 +79,15 @@ def get_advertiser_id_by_name(name):
     if getattr(settings, 'DFP_CREATE_ADVERTISER_IF_DOES_NOT_EXIST', False):
       advertiser = create_advertiser(name)
     else:
-      raise DFPObjectNotFound('No advertiser found  with name {0}'.format(
-        name))
+      raise DFPObjectNotFound('No advertiser found with name {0}'.format(name))
   elif len(response['results']) > 1:
     raise BadSettingException(
       'Multiple advertisers found with name {0}'.format(name))
   else:
     advertiser = response['results'][0]
 
-  logger.info(u'Using existing advertiser with ID "{id}", name "{name}", and '
-    'type "{type}".'.format(id=advertiser['id'], name=advertiser['name'],
-      type=advertiser['type']))
+  logger.info(u'Using existing advertiser with name "{name}" and '
+    'type "{type}".'.format(name=advertiser['name'], type=advertiser['type']))
 
   return advertiser['id']
 

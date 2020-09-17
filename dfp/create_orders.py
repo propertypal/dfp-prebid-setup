@@ -2,7 +2,7 @@
 
 import logging
 
-from googleads import dfp
+from googleads import ad_manager
 
 import settings
 import dfp.get_orders
@@ -54,8 +54,7 @@ def create_order(order_name, advertiser_id, trafficker_id):
     if can_use_existing_order:
       order = existing_order
       logger.info(
-        'Using existing order with id "{id}" and name "{name}".'.format(
-           id=order['id'], name=order['name']))
+        'Using existing order with name "{name}".'.format(name=order['name']))
     else:
       raise BadSettingException(('An order already exists with name {0}. '
         'Please choose a new order name.').format(order_name))
@@ -66,11 +65,10 @@ def create_order(order_name, advertiser_id, trafficker_id):
       create_order_config(name=order_name, advertiser_id=advertiser_id,
         trafficker_id=trafficker_id)
     ]
-    order_service = dfp_client.GetService('OrderService', version='v201702')
+    order_service = dfp_client.GetService('OrderService', version='v202008')
     orders = order_service.createOrders(orders)
 
     order = orders[0]
-    logger.info(u'Created an order with id "{id}"" and name "{name}".'.format(
-           id=order['id'], name=order['name']))
+    logger.info(u'Created an order with name "{name}".'.format(name=order['name']))
 
   return order['id']
